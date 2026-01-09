@@ -6,7 +6,10 @@
     <title>AI Pet</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs" type="module"></script>
+    <style>
+        /* 読み込み前のちらつき防止 */
+        body { background-color: #f0f4f8; }
+    </style>
 </head>
 <body>
     <div id="app">
@@ -26,8 +29,8 @@
         <div id="start-overlay" onclick="window.startApp()">
             <div class="start-msg">
                 <h2>AI Pet Start</h2>
-                <p>タップしてスタート</p>
-                <small>※カメラとマイクを使用します</small>
+                <p>▶ タップしてスタート</p>
+                <small>カメラとマイクをONにしてください</small>
             </div>
         </div>
     </div>
@@ -35,15 +38,10 @@
     <div id="settings-modal" class="hidden">
         <div class="modal-content">
             <h3>設定メニュー</h3>
-            
             <h4>1. ペットを選ぶ</h4>
-            <div id="pet-list-scroll">
-                </div>
-            
+            <div id="pet-list-scroll"></div>
             <hr>
-
             <h4>2. この子の設定</h4>
-            
             <div class="edit-section">
                 <label>呼び名:</label>
                 <div class="input-group">
@@ -51,7 +49,6 @@
                     <button class="btn-change" onclick="window.saveName()">変更</button>
                 </div>
             </div>
-
             <div class="edit-section">
                 <label>反応する言葉 (合言葉):</label>
                 <div class="input-group">
@@ -60,11 +57,10 @@
                 </div>
                 <div id="keyword-list"></div>
             </div>
-            
             <button class="close-btn" onclick="window.toggleSettings()">閉じる</button>
         </div>
     </div>
 
-    <script src="script.js" type="module"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>

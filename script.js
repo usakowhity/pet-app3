@@ -1,6 +1,7 @@
+// --- 1. インポート設定 (CDN URL修正済み) ---
 import { FilesetResolver, FaceLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs";
 
-/* --- 1. 基本設定 (システム定義) --- */
+// --- 2. 設定データ ---
 const PETS_BASE_CONFIG = {
     usako:  { defaultName: "うさこ", type: "rabbit", defaultExt: "png" },
     kuro:   { defaultName: "くろ",   type: "rabbit", defaultExt: "mp4" },
@@ -10,7 +11,6 @@ const PETS_BASE_CONFIG = {
     tama:   { defaultName: "タマ",   type: "cat",    defaultExt: "png" }
 };
 
-// 特殊ファイル定義 (変更なし)
 const SPECIAL_FILES = {
     usako: { n3: 'mp4', p1: 'mp4', p2: 'mp4', p5: 'mp4' },
     kuro:  { p3: 'png', p4: 'png', p6: 'png', p7: 'png' }
@@ -22,27 +22,9 @@ const SOUND_PATHS = {
     pee: "assets/sounds/pee.mp3"
 };
 
-/* --- 2. ユーザーデータ管理 --- */
-// ローカルストレージから設定を読み込む、なければ初期値
+// --- 3. グローバル変数 ---
 let userSettings = JSON.parse(localStorage.getItem('aiPetUserSettings')) || {};
-
-// 現在のペットID
 let currentPetId = localStorage.getItem('currentPetId') || 'taro';
-
-// 現在選択中のペットの設定を取得するヘルパー
-function getCurrentPetSettings() {
-    // まだ設定が保存されていない場合は初期値を生成
-    if (!userSettings[currentPetId]) {
-        userSettings[currentPetId] = {
-            displayName: PETS_BASE_CONFIG[currentPetId].defaultName,
-            // デフォルトの反応ワード
-            keywords: ["かわいい", "いい子", "大好き", "おいで"] 
-        };
-    }
-    return userSettings[currentPetId];
-}
-
-/* --- 3. グローバル変数 --- */
 let currentState = 'n1';
 let lastInteractionTime = Date.now();
 let strokeCount = 0;
@@ -52,29 +34,83 @@ let faceLandmarker;
 let video;
 let visionRunning = false;
 
-// DOM要素
 const imgElem = document.getElementById('pet-image');
 const vidElem = document.getElementById('pet-video');
 const msgElem = document.getElementById('message');
 
-/* --- 4. 起動プロセス --- */
-window.startApp = async function() {
-    document.getElementById('start-overlay').style.display = 'none';
-    new Audio().play().catch(()=>{}); // iOS Audio unlock
+// ユーザー設定取得ヘルパー
+function getCurrentPetSettings() {
+    if (!userSettings[currentPetId]) {
+        userSettings[currentPetId] = {
+            displayName: PETS_BASE_CONFIG[currentPetId].defaultName,
+            keywords: ["かわいい", "いい子", "大好き", "おいで"] 
+        };
+    }
+    return userSettings[currentPetId];
+}
 
-    msgElem.innerText = "準備中...";
+// --- 4. 起動プロセス (Startボタンで発火) ---
+window.startApp = async function() {
+    console.log("App Starting...");
+    const overlay = document.getElementById('start-overlay');
+    overlay.style.display = 'none';
+
+    // iOS等の音声再生制限解除
+    const silentAudio = new Audio();
+    silentAudio.play().catch(()=>{});
+
+    msgElem.innerText = "AI読込中...";
     
-    await setupVision();
-    setupCamera();
-    setupTouchEvents();
-    setupSpeechRecognition(); // ★音声認識セットアップ
-    
-    renderPetList();     
-    applyState('n1');    
-    updateStateLoop();   
+    try {
+        await setupVision(); // AIモデル読み込み
+        setupCamera();       // カメラ起動
+        setupTouchEvents();  // タッチ検知
+        setupSpeechRecognition(); // 音声認識
+        
+        renderPetList();     
+        applyState('n1');    
+        updateStateLoop();
+        
+        console.log("App Started Successfully");
+    } catch (error) {
+        console.error(error);
+        alert("起動エラー: " + error.message);
+        msgElem.innerText = "エラー発生";
+    }
 };
 
-/* --- 5. メインループ & 状態適用 (変更なし部分は省略) --- */
+// --- 5. MediaPipe AIセットアップ ---
+async function setupVision() {
+    // Wasmファイルのパスを指定
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+    );
+    
+    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+            delegate: "GPU"
+        },
+        outputFaceBlendshapes: true,
+        runningMode: "VIDEO",
+        numFaces: 1
+    });
+}
+
+function setupCamera() {
+    video = document.getElementById("webcam");
+    const constraints = { video: { facingMode: "user", width: 480, height: 360 } };
+
+    navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+        video.srcObject = stream;
+        visionRunning = true;
+    }).catch((err) => {
+        console.warn("Camera init failed:", err);
+        msgElem.innerText = "カメラ許可が必要です";
+    });
+}
+
+// --- 6. メインループ ---
 function updateStateLoop() {
     const now = Date.now();
     let nextState = 'n1';
@@ -82,19 +118,46 @@ function updateStateLoop() {
     if (now < timers.p5) nextState = 'p5';
     else if (now < timers.p6) nextState = 'p6';
     else if (now < timers.p7) nextState = 'p7';
-    else if (now < timers.p2) nextState = 'p2'; // 喜びモード
+    else if (now < timers.p2) nextState = 'p2';
     
     if (nextState !== currentState) applyState(nextState);
     if (visionRunning) predictWebcam();
     requestAnimationFrame(updateStateLoop);
 }
 
+// AI予測処理
+let lastVideoTime = -1;
+function predictWebcam() {
+    if (!faceLandmarker || !video || !video.videoWidth) return;
+    
+    if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const result = faceLandmarker.detectForVideo(video, Date.now());
+        
+        if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
+            const shapes = result.faceBlendshapes[0].categories;
+            detectEmotion(shapes);
+        }
+    }
+}
+
+function detectEmotion(shapes) {
+    const smile = (shapes.find(s => s.categoryName === "mouthSmileLeft")?.score + 
+                   shapes.find(s => s.categoryName === "mouthSmileRight")?.score) / 2;
+    const eyeWide = (shapes.find(s => s.categoryName === "eyeLookOutLeft")?.score + 
+                     shapes.find(s => s.categoryName === "eyeLookOutRight")?.score) / 2;
+
+    if (smile > 0.5 && eyeWide < 0.4) {
+        if (currentState !== 'p2') triggerJoy("笑顔に反応！");
+    }
+}
+
+// --- 7. 状態適用・表示 ---
 function applyState(state) {
     currentState = state;
     const baseConfig = PETS_BASE_CONFIG[currentPetId];
-    const userConfig = getCurrentPetSettings(); // ユーザー設定の名前を使用
+    const userConfig = getCurrentPetSettings();
 
-    // --- ファイルパス決定ロジック (変更なし) ---
     let ext = baseConfig.defaultExt;
     if (SPECIAL_FILES[currentPetId] && SPECIAL_FILES[currentPetId][state]) {
         ext = SPECIAL_FILES[currentPetId][state];
@@ -102,7 +165,6 @@ function applyState(state) {
     const filePath = `assets/${currentPetId}/${state}.${ext}`;
     const isVideo = (ext === 'mp4');
 
-    // --- UI更新 ---
     imgElem.className = 'pet-media'; 
     vidElem.className = 'pet-media';
     
@@ -111,10 +173,8 @@ function applyState(state) {
     else if (state === 'p5' || state === 'p6') animClass = 'eating-rock';
     else if (state === 'p7') animClass = 'toilet-squat';
     
-    // メッセージ更新（ユーザーが決めた名前を表示）
     updateMessage(state, userConfig.displayName);
 
-    // --- メディア表示 (変更なし) ---
     if (isVideo) {
         imgElem.classList.add('hidden');
         vidElem.classList.remove('hidden');
@@ -146,7 +206,6 @@ function updateMessage(state, name) {
 }
 
 function playSoundForState(state, animalType) {
-    // (変更なし)
     let src = null;
     if (state === 'p2') src = `assets/sounds/bark_${animalType}.mp3`;
     else if (state === 'p5') src = SOUND_PATHS.eating;
@@ -154,13 +213,27 @@ function playSoundForState(state, animalType) {
     else if (state === 'p7') src = SOUND_PATHS.pee;
 
     if (src) {
+        // 同じ音が連続してうるさくならないよう簡易制御
         const audio = new Audio(src);
-        audio.volume = 0.6;
+        audio.volume = 0.5;
         audio.play().catch(()=>{});
     }
 }
 
-/* --- 6. 音声認識 (★新ロジック) --- */
+// --- 8. 入力系 (タッチ・音声) ---
+function setupTouchEvents() {
+    const container = document.getElementById('pet-container');
+    const handleStroke = () => {
+        strokeCount++;
+        if (strokeCount > 20) {
+            triggerJoy("なでなで中...");
+            strokeCount = 0;
+        }
+    };
+    container.addEventListener('touchmove', handleStroke, { passive: true });
+    container.addEventListener('mousemove', (e) => { if (e.buttons === 1) handleStroke(); });
+}
+
 function setupSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
@@ -173,48 +246,41 @@ function setupSpeechRecognition() {
     recognition.onresult = (event) => {
         const last = event.results.length - 1;
         const text = event.results[last][0].transcript.trim();
-        console.log("認識された音声:", text);
         processSpeech(text);
     };
-    recognition.onend = () => recognition.start(); // 自動再開
-    recognition.start();
+    recognition.onend = () => { try { recognition.start(); } catch(e){} };
+    try { recognition.start(); } catch(e){}
 }
 
 function processSpeech(text) {
     const userConfig = getCurrentPetSettings();
-    const cleanText = text.replace(/ /g, ""); // スペース除去
-
-    // 1. ユーザー定義キーワード (名前、合言葉など) のチェック -> p2 (喜び)
-    // 登録された名前(displayName) もキーワードとして扱う
+    const cleanText = text.replace(/ /g, "");
     const triggerWords = [...userConfig.keywords, userConfig.displayName];
     
-    // 一つでもマッチすれば反応
-    const isMatch = triggerWords.some(word => cleanText.includes(word));
-
-    if (isMatch) {
-        triggerJoy(`${userConfig.displayName}が反応した！`);
-        return;
-    }
-
-    // 2. 共通コマンド (ごはん、トイレなど)
-    if (cleanText.includes("ごはん") || cleanText.includes("ご飯")) setTimer('p5', 5);
-    else if (cleanText.includes("水") || cleanText.includes("お水")) setTimer('p6', 5);
+    if (triggerWords.some(word => cleanText.includes(word))) {
+        triggerJoy(`${userConfig.displayName}が反応！`);
+    } else if (cleanText.includes("ごはん")) setTimer('p5', 5);
+    else if (cleanText.includes("水")) setTimer('p6', 5);
     else if (cleanText.includes("トイレ")) setTimer('p7', 4);
+}
+
+function triggerJoy(msg) {
+    setTimer('p2', 4);
+    if (msg) msgElem.innerText = msg;
 }
 
 function setTimer(state, sec) {
     timers[state] = Date.now() + sec * 1000;
     lastInteractionTime = Date.now();
-    // 次のループで反映される
 }
 
-/* --- 7. UI操作・設定保存 (★追加機能) --- */
+// --- 9. 設定メニュー関連 (Window関数として公開) ---
 window.toggleSettings = function() {
     const modal = document.getElementById('settings-modal');
     modal.classList.toggle('hidden');
     if (!modal.classList.contains('hidden')) {
         renderPetList();
-        renderEditForm(); // フォームも更新
+        renderEditForm();
     }
 };
 
@@ -222,75 +288,54 @@ window.changePet = function(id) {
     currentPetId = id;
     localStorage.setItem('currentPetId', id);
     renderPetList();
-    renderEditForm(); // ペットを変えたらフォームもその子の内容に
+    renderEditForm();
     applyState('n1');
 };
 
-// ペット一覧描画
 function renderPetList() {
     const list = document.getElementById('pet-list-scroll');
     list.innerHTML = Object.entries(PETS_BASE_CONFIG).map(([id, p]) => {
-        // 保存された名前があればそれを表示、なければデフォルト
         const savedName = userSettings[id] ? userSettings[id].displayName : p.defaultName;
         const isSelected = id === currentPetId ? 'selected-pet' : '';
-        return `
-        <div class="pet-option ${isSelected}" onclick="window.changePet('${id}')">
-            ${savedName} <span style="font-size:0.8em; color:#888;">(${p.type})</span>
-        </div>`;
+        return `<div class="pet-option ${isSelected}" onclick="window.changePet('${id}')">${savedName}</div>`;
     }).join('');
 }
 
-// 編集フォーム描画
 function renderEditForm() {
     const config = getCurrentPetSettings();
     document.getElementById('edit-name-input').value = config.displayName;
-    
-    // キーワードリスト表示
     const keywordList = document.getElementById('keyword-list');
-    keywordList.innerHTML = config.keywords.map((word, index) => `
-        <span class="keyword-tag">
-            ${word} <b onclick="window.removeKeyword(${index})">×</b>
-        </span>
-    `).join('');
+    keywordList.innerHTML = config.keywords.map((word, index) => 
+        `<span class="keyword-tag">${word} <b onclick="window.removeKeyword(${index})">×</b></span>`
+    ).join('');
 }
 
-// 名前保存
 window.saveName = function() {
     const newName = document.getElementById('edit-name-input').value;
     if (newName) {
-        if (!userSettings[currentPetId]) getCurrentPetSettings(); // 初期化保証
+        if (!userSettings[currentPetId]) getCurrentPetSettings();
         userSettings[currentPetId].displayName = newName;
-        saveToStorage();
-        alert(`名前を「${newName}」に変更しました`);
-        renderPetList(); // リストの名前も更新
-        applyState(currentState); // 画面上の名前も更新
+        localStorage.setItem('aiPetUserSettings', JSON.stringify(userSettings));
+        renderPetList();
+        applyState(currentState);
+        alert("名前を変更しました");
     }
 };
 
-// キーワード追加
 window.addKeyword = function() {
     const input = document.getElementById('new-keyword-input');
     const word = input.value.trim();
     if (word) {
         if (!userSettings[currentPetId]) getCurrentPetSettings();
         userSettings[currentPetId].keywords.push(word);
-        saveToStorage();
+        localStorage.setItem('aiPetUserSettings', JSON.stringify(userSettings));
         input.value = '';
         renderEditForm();
     }
 };
 
-// キーワード削除
 window.removeKeyword = function(index) {
     userSettings[currentPetId].keywords.splice(index, 1);
-    saveToStorage();
+    localStorage.setItem('aiPetUserSettings', JSON.stringify(userSettings));
     renderEditForm();
 };
-
-function saveToStorage() {
-    localStorage.setItem('aiPetUserSettings', JSON.stringify(userSettings));
-}
-
-// 既存の関数（MediaPipe, TouchEventなど）はそのまま維持...
-// (setupVision, setupCamera, setupTouchEvents, triggerJoy, detectEmotion など)
-// ※triggerJoy内のメッセージも userConfig.displayName を使うように微修正すると尚良し
