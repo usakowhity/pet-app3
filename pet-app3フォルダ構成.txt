@@ -1,0 +1,32 @@
+pet-app/
+│
+├── index.html            ← UI、カメラ、設定モーダル
+├── style.css             ← アニメーション（joyの跳ねる動き等）
+├── script.js             ← ロジック完全版（type="module"）
+├── manifest.json         ← PWA設定ファイル
+│
+├── icons/                ← ホーム画面追加用アイコン
+│   ├── icon-192.png      (192x192px)
+│   └── icon-512.png      (512x512px)
+│
+└── assets/
+ ├── common/
+ │   └── placeholder.png       (画像未設定時や読み込みエラー時の代替)
+ │
+ ├── sounds/                   (★共通・フォールバック用音源)
+ │   ├── bark_dog.mp3          (犬の鳴き声：汎用)
+ │   ├── bark_cat.mp3          (猫の鳴き声：汎用)
+ │   ├── bark_rabbit.mp3       (ウサギの微かな音：汎用)
+ │   ├── eating.mp3            (カリカリ音)
+ │   ├── drinking.mp3          (ピチャピチャ音)
+ │   └── pee.mp3               (トイレ音)
+ │
+ ├── usako/                    (★白ウサギ専用フォルダ)
+ │   ├── n1.png ～ p7.png      (全10ポーズ)
+ │   └── bark.mp3              (★Usako専用の甘え声/鼻鳴らし音：あれば)
+ │
+ ├── kuro/                     (黒ウサギ：usakoと同様の構成)
+ ├── taro/                     (白パピヨン：同様)
+ ├── marple/                   (白トイプードル：同様)
+ ├── pochi/                    (薄茶柴犬：同様)
+ └── tama/                     (猫：同様)
